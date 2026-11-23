@@ -1,33 +1,62 @@
-name: Build Watch8 PureTimer from one ZIP
+name: Build Watch8 PureTimer V4 (One ZIP)
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+
+      # This action installs Android command line tools and puts sdkmanager on PATH.
+      - name: Set up Android SDK 35
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Install SDK 35
+
+      - name: Unpack V4 source ZIP
+        shell: bash
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Unpack single ZIP and build
-        run: |
+          set -euo pipefail
+          # Prefer the patched archive when both have been uploaded.
+          if [[ -f Watch8_PureTimer_V4_SDKFix_OneUpload.zip ]]; then
+            ZIP=Watch8_PureTimer_V4_SDKFix_OneUpload.zip
+          elif [[ -f Watch8_PureTimer_V4_VibrationFix_OneUpload.zip ]]; then
+            ZIP=Watch8_PureTimer_V4_VibrationFix_OneUpload.zip
+          else
+            echo 'ERROR: Upload Watch8_PureTimer_V4_VibrationFix_OneUpload.zip or Watch8_PureTimer_V4_SDKFix_OneUpload.zip to the repository root.' >&2
+            exit 1
+          fi
           mkdir -p source
-          unzip -q Watch8_PureTimer_V4_VibrationFix_OneUpload.zip -d source
-          cd source
-          gradle --no-daemon :app:assembleDebug
-      - uses: actions/upload-artifact@v4
+          unzip -q "$ZIP" -d source
+          test -f source/settings.gradle
+          test -f source/app/build.gradle
+
+      - name: Build Wear OS APK
+        working-directory: source
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Upload V4 APK
+        uses: actions/upload-artifact@v4
         with:
           name: Watch8-PureTimer-V4-APK
           path: source/app/build/outputs/apk/debug/app-debug.apk
